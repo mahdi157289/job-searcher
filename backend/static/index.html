@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Scraper</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Job Scraper</h1>
+        
+        <div id="controls">
+            <button id="scrape-all-btn" class="primary-btn">Scrape All Sites</button>
+            <div id="global-progress" style="display: none;">
+                <div class="progress-bar-container">
+                    <div id="progress-bar"></div>
+                </div>
+                <div id="progress-text">0%</div>
+                <div id="current-site-info"></div>
+                <div class="action-buttons">
+                    <button id="approve-btn" style="display:none;">Approve Next</button>
+                    <button id="skip-btn" style="display:none;">Skip Site</button>
+                    <button id="approve-all-btn" style="display:none;">Approve All Remaining</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="sites-grid" class="sites-grid">
+            <!-- Site cards will be injected here -->
+        </div>
+
+        <h2>Logs</h2>
+        <div id="logs" class="log-box"></div>
+
+        <h2>Results</h2>
+        <div id="results-summary"></div>
+        <div id="results-container" class="results-container">
+        <div id="table-counter" class="table-counter"></div>
+        <table id="results-table">
+            <thead>
+                <tr>
+                    <th>Site</th>
+                    <th>Platform</th>
+                    <th>Company</th>
+                    <th>Title</th>
+                    <th>Link</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+        </div>
+
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

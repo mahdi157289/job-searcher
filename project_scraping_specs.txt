@@ -1,0 +1,146 @@
+# Scraping Strategy Specifications and Workflow
+This document outlines the technical specifications, workflows, and implementation details for the scraping strategies used in the Job Scraping Dashboard.
+
+## Overview
+The scraping engine uses **Playwright** (Sync API) to handle dynamic content. It employs a **Strategy Pattern**, where a specific strategy class is selected based on the target URL.
+
+**Common Workflow:**
+1.  **Detection**: `get_strategy(url)` checks if a registered strategy `can_handle(url)`.
+2.  **Navigation**: Playwright navigates to the URL (`page.goto`).
+3.  **Extraction**: The strategy extracts job data (Title, Company, Location, Link).
+    -   **API Interception**: Preferred method (faster, more reliable). Listens for JSON responses.
+    -   **DOM Scraping**: Fallback method. Parses HTML elements using CSS selectors.
+4.  **Detail Fetching**: Visits individual job links to extract the full description.
+5.  **Normalization**: Standardizes data into a common dictionary format.
+
+---
+
+## 1. Infor Strategy (`infor.py`)
+**Target**: Infor Talent Science / Taleo-based boards.
+**Method**: **DOM Scraping** (Primary).
+
+### Short Description
+Scrapes job listings from Infor-hosted career pages by iterating through the list of jobs and navigating through pagination pages.
+
+### Workflow & Technical Specifications
+1.  **Navigation**:
+    -   Navigates to the main career page.
+    -   Waits for the job list container (`.job-list`, `.list__item`) to load.
+
+2.  **Job Extraction (List View)**:
+    -   **Selectors**: Scans for elements matching `.shareButton` (often contains job data attributes) or `.list__item`.
+    -   **Attributes**: Extracts job title and URL from the anchor tag within the list item.
+    -   **Pagination**:
+        -   Identifies "Next" buttons (`button.pagination__next`, `load-more-button`).
+        -   Clicks the button and waits for new content to load (`page.wait_for_load_state("networkidle")`).
+        -   Repeats until no "Next" button is found or a max page limit is reached.
+
+3.  **Detail Extraction (Detail View)**:
+    -   **Method**: Visits each extracted job URL using `requests` (for speed) or Playwright (fallback).
+    -   **Selectors**: Looks for description containers like `div.article__content`, `.job-description`.
+    -   **Content**: Extracts inner text, preserving line breaks.
+
+---
+
+## 2. Snaphunt Strategy (`snaphunt.py`)
+**Target**: Snaphunt (Recruitment Platform).
+**Method**: **Hybrid** (API Interception + DOM Fallback).
+
+### Short Description
+Primarily attempts to intercept the backend JSON API response containing job data. Falls back to visual HTML parsing if the API call is missed.
+
+### Workflow & Technical Specifications
+1.  **API Interception (Primary)**:
+    -   **Setup**: Attaches a listener `page.on("response", handle_response)` before navigation.
+    -   **Target URL**: Filters for responses from `api.snaphunt.com/jobs/recruiters`.
+    -   **Data Parsing**:
+        -   Parses the JSON response body.
+        -   Handles nested JSON strings (sometimes the body is a stringified JSON inside a `body` field).
+        -   Extracts the list of jobs from keys like `data`, `jobs`, or `list`.
+        -   Maps fields: `title` -> `title`, `location` -> `location`, `id` -> constructs URL.
+
+2.  **DOM Scraping (Fallback)**:
+    -   **Trigger**: If no API jobs are found after page load.
+    -   **Selectors**: Looks for job cards using generic class names or text content (e.g., "View Job").
+    -   **Extraction**: Parses visible text for title and location.
+
+3.  **Detail Extraction**:
+    -   **Method**: Similar to other strategies, visits the job page.
+    -   **Selectors**: `div[class*='JobDescription']`, `.snaphunt-job-description`.
+
+---
+
+## 3. Ashby Strategy (`ashby.py`)
+**Target**: AshbyHQ.
+**Method**: **Hybrid** (Window Data + API + DOM).
+
+### Short Description
+Extracts data from the global `window.__appData` object often found in Ashby's React application state, which contains all job data. Also listens for GraphQL API calls.
+
+### Workflow & Technical Specifications
+1.  **Window Data Extraction (Primary)**:
+    -   **Method**: Gets `page.content()` and uses Regex (`window\.__appData\s*=\s*({.*?});`) to find the initial state.
+    -   **Data**: Parses the JSON to find `jobPostings` or `jobBoard` objects.
+    -   **Benefit**: Instant access to all jobs without pagination.
+
+2.  **API Interception (Secondary)**:
+    -   **Target**: GraphQL endpoints (`ApiJobBoard`).
+    -   **Action**: Captures job data dynamically loaded via AJAX.
+
+3.  **DOM Scraping (Fallback)**:
+    -   **Selectors**: Finds `<a>` tags with hrefs matching the Ashby job ID pattern (`/[0-9a-f-]{10,}`).
+
+---
+
+## 4. Greenhouse Strategy (`greenhouse.py`)
+**Target**: Greenhouse.io boards.
+**Method**: **DOM Scraping**.
+
+### Short Description
+Scrapes standard Greenhouse job boards, handling both the main board and embedded "iframe-style" integrations (though usually accessed directly).
+
+### Workflow & Technical Specifications
+1.  **Navigation**: Checks for login pages (skips `my.greenhouse.io`).
+2.  **Extraction**:
+    -   **Selectors**: Looks for `.opening` (classic layout) or generic `a[href*='/jobs/']`.
+    -   **Structure**:
+        -   **Title**: `a` tag text.
+        -   **Location**: `.location` span text.
+    -   **Grouping**: Often groups jobs by department (section headers), but the scraper flattens this list.
+
+3.  **Detail Extraction**:
+    -   **Method**: `requests.get()` on job links.
+    -   **Selectors**: `#content`, `#main`, `.job-description`.
+
+---
+
+## 5. Workday Strategy (`workday.py`)
+**Target**: Workday (myworkdayjobs.com).
+**Method**: **DOM Scraping**.
+
+### Short Description
+Handles the complex, dynamic nature of Workday sites which often use shadow DOM or heavy JavaScript.
+
+### Workflow & Technical Specifications
+1.  **Interaction**:
+    -   **Scrolling**: Performs active scrolling (`window.scrollBy`) to trigger lazy loading of list items.
+    -   **Waiting**: explicit waits for selectors `a[href*="/job/"]` or `a[href*="jobPosting"]`.
+
+2.  **Extraction**:
+    -   **Selectors**: Query selectors for job links.
+    -   **Data**: Extracts text from the link for the title. Location is often hard to isolate in the list view without shadow DOM traversal, so it defaults to "Unknown" or fetches from details.
+
+---
+
+## General Technical Components (`engine.py` & `base.py`)
+
+### Base Strategy
+-   **Interface**: All strategies inherit from `BaseStrategy`.
+-   **Methods**: `scrape(page, url)`, `can_handle(url)`.
+
+### Engine (`ScraperEngine`)
+-   **Driver**: Uses `playwright.sync_api`.
+-   **Job Counting**:
+    -   `total_found`: Raw count from `strategy.scrape()`.
+    -   `filtered_count`: Count after applying `filter_jobs_by_date` (removes jobs older than 30 days).
+-   **Streaming**: Supports a callback `on_jobs_found` to push data to the frontend in real-time.
