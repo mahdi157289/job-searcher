@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = '/api'; // Use relative path to leverage Vite proxy
+const API_URL = import.meta.env.VITE_API_URL || '/api'; // Use env var or relative path
 
 export interface Job {
     title: string;
